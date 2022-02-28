@@ -28,7 +28,7 @@ This data came from the Illinois State government website: https://data.illinois
 ```{r, echo=FALSE}
 #df <- read.csv("C:/Users/ozbun/Desktop/inmate_data.csv")
 
-setwd("C:\\Users\\ozbun\\Desktop")
+#setwd("C:\\Users\\ozbun\\Desktop")
 
 df <- read.csv("inmate_data.csv", header = TRUE)
 
