@@ -3,7 +3,8 @@ title: "Analysis of Illinois Prison Booking Data"
 author: "Andrew Ozbun"
 date: "February 24, 2022"
 output: 
-  rmarkdown::github_document:
+  github_document:
+    pandoc_args: --webtex
     toc: true
     toc_float: true
 ---
