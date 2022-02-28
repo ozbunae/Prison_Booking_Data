@@ -1,1 +1,759 @@
+---
+title: "Analysis of Illinois Prison Booking Data"
+author: "Andrew Ozbun"
+date: "February 24, 2022"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=8, fig.height=4,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+## Overview  
+
+### Objective
+In this project my goal is to take the raw data concerning Illinois state prison bookings and anaylze their attributes. The goal is to treat this as though it is being presented to a group of social workers. Possibly aiming to develop criminal profiles and determine courses of action that would help prevent future bookings. 
+
+### About the Data 
+This data came from the Illinois State government website: https://data.illinois.gov.  The link to the exact data can be found in the bibliography. The data had 38 attributes, and included date-time, numerical, nominal, and ordinal data. I will be examining attributes such as age at the time of arrest, race, employment status, marital status, level of offense, and type of crime committed.  There will also be a time series analysis of the number of bookings per a day to determine if there are any trends or patterns in the booking data. It is the prison booking data for the entire state of Illinois from January 1, 2012 to July 1, 2018.  The data contained roughly 67 thousand observations.  It is a list of every person that was booked in the prison system during that time, why they were booked, exact dates and times of bookings, and information about the inmate.  
+
+*It is really important to note that this is not a roster of who is currently in prison in the state of Illinois.  There are inmates who are in the prison system who were booked outside of the scope of this data.  In addition, this does not contain information revealing the name of the person being booked, nor whether they are a repeat offender. It is possible, if not likely, that there are duplicates in this data in reference to the person being booked.*
+
+*When looking at the visualizations for this data, keep the above in mind.  It mean that when we look at something like race it does not represent the proportion of current inmates who are a certain race, it represents the number of times a person of that race was arrested.*  
+
+```{r, echo=FALSE}
+#df <- read.csv("C:/Users/ozbun/Desktop/inmate_data.csv")
+
+setwd("C:\\Users\\ozbun\\Desktop")
+
+df <- read.csv("inmate_data.csv", header = TRUE)
+
+inmate_df <- na.omit(df)
+library(dplyr)
+# library(knitr)
+# inmate_tibble <- as_tibble(inmate_df)
+# kable(inmate_tibble)
+
+```
+
+
+### Data Prep and Cleaning
+The first part was to examine the data and look for irregularities.  There were a total of 924 NaN (Null) values.  These were removed from the data before continuing.  When first exploring the categorical attributes I used a function to examine all of the unique values for each attribute.  Each categorical attribute contained an empty string as one of the categories.  It can be assumed that this is when the person booking the inmate did not have information on the inmate for this category.  When I removed all of the empty strings I was left with only 2,000 observations.  Since this took away such a large portion of my data set I decided to remove them ad hoc.  So, I would only remove empty strings from a category when I was working with that category in order to preserve most of the data.  
+
+A note on the time series data -
+When doing the time series, extra data cleaning and feature engineering was required.  I had to manipulate the data into a data frame that contained the booking counts for each unique day and the date itself.  The date data had to be converted from a string to date-time using the lubridate package.  After I had a new data frame with these two values I extracted the month, year, and day of the week into 3 more columns, respectively.  
+
+## Initial Distribution of Age at Arrest
+The four main numerical values I had to work with were age at arrest, age at release, days in jail, and hours in jail.  I decided to work the most with age at arrest and days in jail.  Ultimately, days in jail ended up being far too skewed to work with reasonably.
+
+Below I have gone through the inital visualizations for the age at arrest, with the mean age of arrest was 30.77 or roughly 31. There was a standard deviation of 3.52 years. This still had a strong right skew with the highest peaks of the histogram being people in their mid 20s.  I then broke down this information and organized it by race in both histogram and boxplot form.
+
+```{r, echo=FALSE}
+
+library(plotly)
+
+arrest_age <- inmate_df$age_at_arrest
+fit = density(arrest_age)
+
+vline <- function(x = 0, color = "3B5281") {
+  list(
+    type = "line", 
+    y0 = 0, 
+    y1 = 1, 
+    yref = "paper",
+    x0 = x, 
+    x1 = x, 
+    line = list(color = color, dash = "dash")
+  )
+}
+
+#Age at arrest Distribution using PLOTLY
+fig <- plot_ly(x = arrest_age, 
+               type = "histogram",
+               name = "Histogram")%>%
+  add_trace(data = fit,#add trace will create overlay of density
+            x = fit$x, 
+            y = fit$y,
+            mode = "lines",#creates outside line
+            type = "scatter",#needed or produces error
+            fill = "tozeroy", 
+            yaxis = "y2", 
+            inherit = FALSE, #doesn't inherit attributes of first fig
+            name = "Density")%>%
+  #adding in arguments for second graph
+  layout(legend = list(orientation = "h"),#change legend to bottom
+         yaxis2 = list(overlaying = "y", 
+                       side = "right",
+                       showticklabels = FALSE,#get rid of second label
+                       showgrid = FALSE))#get rid of second gridline
+#labels and tick values
+fig <- layout(fig, xaxis = list(title = "Age at Arrest", #create tick
+                                range= c(15, 85),
+                                dtick = 10,#bin width of tick
+                                tickmode = "linear"),
+                                #tickangle = 45),
+              yaxis = list(title = "Frequency",
+                           range = c(0, 4500)),
+              title = "<b>Distribution of Age at Arrest<b>",
+              shapes = list(vline(mean(arrest_age))))
+
+fig
+
+```
+
+
+### Distributions Grouped by Race
+
+When I first broke this down, I wanted to see if there was a difference in distribution when grouped by race. It was interesting to discover that all of the distributions remained similar to the overall distribution.  The only exception was Native American, but I do not feel this is a fair analysis since there were far fewer from that population in comparison to other races.  In accordance with the law of large numbers, it is possible that if there were more Native Americans in the overal population, their skew would be similar to that of other races.
+
+```{r, echo=FALSE, fig.width=8, fig.height=6}
+
+df2<-inmate_df[(inmate_df$race != ""),]
+#Histograms of Race distribution
+ggplot(df2, aes(x = age_at_arrest)) +
+  geom_histogram(aes(fill = factor(race)), binwidth = 5) +
+  facet_grid(race ~., scales = "free") +
+  scale_fill_brewer(palette = "BrBG", name = "Race") +
+  labs(title = "Histograms of Arrest Age \nSorted by Race",
+       y = "Frequency",
+       x = "Age at Arrest")+
+  theme(strip.text = element_blank())#takes away y2 labels
+
+```
+
+
+### Five Number Summary Box Plots   
+The box plots below contain the five number summary of the age at the time of arrest for each race. Although there is some variance, each group falls within the mid 20s to early 30s age range.  This supports the overall average age of arrest being 31.  
+
+
+```{r, echo=FALSE, fig.width=8, fig.height=6}
+
+p <- plot_ly(df2, 
+             x = ~age_at_arrest, 
+             color = ~race, 
+             type = "box",
+             boxpoints = "outliers") %>%
+  layout(xaxis = list(title = "<b> Age at Arrest <b>"),
+         legend = list(title = list(text = '<b> Race </b>')),
+         title = "<b> Quartile Summary of Age at Arrest \nBy Race <b>")
+p
+
+```
+
+
+
+## Central Limit Theorem 
+
+The central limit theorem suggests that if you have a population mean (mu) and standard deviation (sigma), and take "sufficiently large random samples" with replacement, then the distribution will become bell shaped.(Sullivan, 2016) This theorem is important because it applies to data that has a pronounced tail or skew, like ours.  Two important features of this data that allows us to use the Central Limit Theorem is that this data contains the entire population.  Since it is from a government website with meticulous records we have the age of every single person, each time they were booked in prison.  This is not a sample of the population.  The other important distinction is the amount entries the data contains, 67,000.  Since our data is heavily skewed, "the samples may need to be much larger for the distribution of the sample means to begin to show a bell shape". (Kerns,G.J., 2010).  Luckily we have plenty of data to pull from.
+Continuing to use the age at arrest attribute, I have applied the Central Limit Theorem below. I worked with 5000 samples and sample sizes of 10, 20, 30, and 40. 
+
+```{r, echo=FALSE}
+
+set.seed(6232)
+
+samples <- 5000
+sample_size <- 10
+
+xbar <- numeric(samples)
+
+for (i in 1: samples) {
+  xbar[i] <- mean(sample(df2$age_at_arrest, sample_size, replace = FALSE))
+}
+
+fit2 <- density(xbar)
+
+histo1 <- plot_ly(x = xbar,
+                   type = "histogram",
+                   histnorm = "probability",
+                   name = "Histogram",
+                   opacity = 0.7,
+                   marker = list(color = "#67032F"))%>%
+  layout(yaxis = list(range = c(0, 0.07),
+                      title = "Probability Mass Function"),
+         title = "Histogram of Booking Ages",
+         xaxis = list(range = c(18, 45),
+                      title = "Booking Age"),
+         shapes = list(vline(mean(xbar)))) %>%
+  add_lines(data = fit2,#add trace will create overlay of density
+            x = fit2$x, 
+            y = fit2$y,
+            yaxis = "y2", 
+            inherit = FALSE, #doesn't inherit attributes of first fig
+            name = "Density",
+            marker = list("red")) %>%
+  layout(legend = list(orientation = "h"),#change legend to bottom
+         yaxis2 = list(overlaying = "y", 
+                       side = "right",
+                       showticklabels = FALSE,#get rid of second label
+                       showgrid = FALSE,#get rid of second gridline
+                       rangemode = "tozero"))
+histo1
+
+mu <- mean(df2$age_at_arrest)
+sigma <- sd(df2$age_at_arrest)
+
+```
+### Different Sampling Sizes
+
+Now using 4 different samples sizes (10, 20, 30, 40) of 1,000 samples, let's examine the shape of the bell curves.  The larger the sample size, the taller and thinner the bell curve becomes with a smaller standard deviation.
+
+```{r, echo=FALSE, fig.width=8, fig.height=6}
+
+samples <- 1000
+
+xbar2 <- numeric(samples)
+p_list <- list()
+p <- plot_ly()
+
+sample_sizes <- c(10, 20, 30, 40)
+
+for (size in sample_sizes) {
+  
+  for (i in 1:samples) {
+    xbar2[i] <- mean(sample(df2$age_at_arrest, size, replace = FALSE))
+  }
+  p_list[[quo_name(size)]] <- add_trace(p, 
+                 x = xbar2,
+                 type = "histogram",
+                 opacity = 0.5,
+                 name = paste("sample size =", size))%>%
+    layout(xaxis = list(range = c(20, 40)), 
+           yaxis = list(range = c(0, 140)))
+}
+
+plotly_subs <- subplot(p_list, nrows = (length(sample_sizes)/2))%>%
+  layout(title = list(text = "Distribution of Arrest Age \nFour Sample Sizes"),
+         margin = 0.05)
+
+plotly_subs
+
+```
+### Sampling Methods
+
+I used three different types of sampling methods to explore this data.  Simple Random Sampling Without Replacement, Systematic Sampling (Unequal Probabilities), and Stratified Sampling.  Based on the look of the histograms, I feel like stratified sampling (while still using race as our categorical variable) was the best method.   
+Simple random sampling reflected the base data with a strong right skew.  Systematic with unequal probabilities was chosen to take into account the weight of different observations. It was a little more even than RSWOR.  Stratified looked the closest to a normal distribution.  I feel like Stratified Sampling was the closest to a normal distribution because it takes into account all of the different major categories and pulls proportional samples.  I used sample sizes of 100 for this. 
+
+```{r, echo = FALSE, fig.width=8, fig.height=6}
+library(sampling)
+
+#SRSWOR------------------------------------------------------------------------
+set.seed(6232)
+n <- 100
+
+s <- srswor(n, nrow(df2))
+
+rows <- (1:nrow(df2))[s!=0]
+rows <- rep(rows, s[s != 0])
+
+
+sample_srs <- df2[rows, ]
+
+srswor_df <- as.data.frame(table(sample_srs$race), )
+colnames(srswor_df) <- c("Race", "Freq")
+srswor_df$Percent <- c((srswor_df$Freq/n)*100)
+
+
+mu_srs <- mean(sample_srs$age_at_arrest)
+sigma_srs <- sd(sample_srs$age_at_arrest)
+
+#Systematic Sampling ----------------------------------------------------------
+set.seed(6232)
+n <- 100
+pick <- inclusionprobabilities(df2$age_at_arrest, n)
+
+systematic <- UPsystematic(pick)
+
+sample_sys <- df2[systematic != 0, ]
+
+table_sys <- table(sample_sys$race)
+ptable_sys <- prop.table(table_sys)
+
+df_sys <- as.data.frame(table_sys, )
+colnames(df_sys) <- c("Race", "Freq")
+df_sys$Percent <- c((df_sys$Freq/n)*100)
+
+mu_sys <- mean(sample_sys$age_at_arrest)
+sigma_sys <- sd(sample_sys$age_at_arrest)
+
+
+#Stratified Sampling ---------------------------------------------------------
+
+row.names(df2) <- 1:nrow(df2)
+#double check nas are gone
+df2 <- na.omit(df2)
+
+set.seed(6232)
+n <- 100
+#I had to only use races that were more than one percent of the total data
+data_strata <- df2[df2$race == "Black" | 
+                df2$race == "White" |
+                df2$race == "Hispanic", ]
+
+#order the df by groups
+order.index <- order(data_strata$race)
+data <- data_strata[order.index,]
+#create frequency table
+freq <- table(data_strata$race)
+
+#assign amounts to groups and check if it adds to 50
+st_sizes <- n * freq / sum(freq)
+
+#run strata
+sample_strat <- strata(data,
+                       stratanames = c("race"),
+                       size = st_sizes,
+                       method = "srswor",
+                       description = FALSE)
+
+st <- getdata(data, sample_strat)
+
+
+table_strat <- table(sample_strat$race)
+perc_sample_strat <- prop.table(table_strat)
+
+df_strata <- as.data.frame(table_strat )
+colnames(df_strata) <- c("Race", "Freq")
+df_strata$Percent <- c(df_strata$Freq/n*100)
+
+strata_mu <- mean(st$age_at_arrest)
+strata_sigma <- sd(st$age_at_arrest)
+
+
+#Sampling Histograms----------------------------------------------------------
+
+#SRSWOR
+plot1 <- plot_ly(x = sample_srs$age_at_arrest,
+                 type = "histogram",
+                 name = "SRSWOR",
+                 marker = list(color = "#895775")) %>%
+  layout(yaxis = list(title = "Frequencies",
+                      range = c(0, 30)),
+         xaxis = list(title = "Age at Arrest"))
+
+#Systematic Sampling
+plot2 <- plot_ly(x = sample_sys$age_at_arrest,
+                 type = "histogram",
+                 name = "Systematic",
+                 marker = list(color = "#756857")) %>%
+  layout(yaxis = list(title = "Frequencies",
+                      range = c(0, 30)),
+         xaxis = list(title = "Age at Arrest"))
+
+#Stratified Sampling
+plot3 <- plot_ly(x = st$age_at_arrest,
+                 type = "histogram",
+                 name = "Stratified",
+                 marker = list(color = "#9A918D")) %>%
+  layout(yaxis = list(title = "Frequencies",
+                      range = c(0, 30)),
+         xaxis = list(title = "Age at Arrest"))
+
+#Actual Data
+plot4 <- plot_ly(x = df2$age_at_arrest,
+                 type = "histogram",
+                 name = "Raw Data",
+                 marker = list(color = "#B85067")) %>%
+  layout(yaxis = list(title = "Frequencies",
+                      range = c(0, 4500)),
+         xaxis = list(title = "Age at Arrest"))
+
+sampling_fig <- subplot(plot1, plot2, plot3, plot4, 
+                        nrows = 2, 
+                        titleX = TRUE,
+                        titleY = TRUE,
+                        margin = 0.05) %>%
+  layout(title = list(text = "Histograms of Sampling Methods"))
+
+sampling_fig
+
+Mu <- c(mu, mu_srs, mu_sys, strata_mu)
+Sigma <- c(sigma, sigma_srs, sigma_sys, strata_sigma)
+Sample.Type <- c( "Raw Data", "SRSWOR", "Systematic", "Stratified")
+
+results <- data.frame(Sample.Type, Mu, Sigma)
+results
+
+
+```
+
+## Exploring Demography of Inmate Bookings
+When thinking about presenting this to a group of social workers I wanted to build a profile of who is being booked in prison.  Ultimately, this could help create a plan of how to help individuals who are being booked in prison.  I want to point out that I am going to try to be delicate and sensitive with my inferences in this section.  Although we can answer questions like who or what, we can not conclude WHY.  
+
+My main hypothesis in exploring this data is that individuals who have less stability are more likely to be booked.  
+
+### Veteran Status
+This pie chart is simplistic and dominated by one category.  This one category tells us a lot though.  95.8% of people who were booked in the Illinois prison system did not have a military background.  Since the military is known for providing discipline and stability this supports the theory that individuals with less stability are more likely to be booked. 
+
+```{r, echo=FALSE, fig.width= 8, fig.height=8}
+#Veteran Status
+military_df <- inmate_df[which(inmate_df$military != ""), ]
+mil_count <- as.data.frame(table(military_df$military))
+
+mil <- plot_ly(mil_count,
+               labels = ~Var1,
+               values = ~Freq,
+               type = "pie",
+               marker = list(colors = c("#556677", "#AA3344", "#772200", 
+                                        "#11AA22", "#AA231B88"))) %>%
+  layout(title = list(text = "Proportion of Veterans"))
+mil
+```
+
+### Levels of Crime
+When reviewing the data below, it is organized by three different categories.   
+
+1. Level of Crime (Felony or Misdemeanor)  
+2. High Level Type of Crime (Generalized)  
+3. Specific Crimes (What exactly the inmate is being charged with.)  
+
+
+### Sex and Race
+I put these two plots in because I feel like they are interesting in terms of proportions. I do not want to use them to make any inferences though.  I feel like this is part of a larger social issue that is sensitive.  Although it is important to look at and note, no solid inferences can be made about the booking of race and sex from these plots.
+
+```{r, echo = FALSE, fig.width=12, fig.height=8}
+par(mfrow = c(1,2))
+offense_df <- df2[which(df2$offense_level == "Misdemeanor" | 
+                                df2$offense_level == "Felony"),]
+
+count1 <- table(offense_df$offense_level,
+                offense_df$sex)
+
+mosaicplot(count1,
+           main = "Sex and Level of Crime",
+           color = c("violetred4", "cornflowerblue"),
+           las = 1)
+
+count2 <- table(offense_df$offense_level,
+                offense_df$race)
+
+mosaicplot(count2,
+           main = "Race and Level of Crime",
+           color = c("violetred4", "cornflowerblue"),
+           las = 1)
+par(mfrow = c(1,1))
+```
+
+
+### Sex v. High Level Type of Crime   
+Again, not too many infrences can be made about men or women based on this, but we can make a few observations.
+
+1. Women show higher presence in committing property and traffic crimes.
+2. Men show higher presence in committing public order, Drug, and Domestic crimes.
+3. No women committed sex crimes in the 6 1/2 years this data was collected.
+
+
+```{r, echo = FALSE, fig.width=6, fig.height=8}
+
+sex <- df2[which(df2$superhighlevel != ""), ]
+sex_tibble <- as_tibble(sex)
+sex_summary <- sex_tibble %>%
+  count(superhighlevel, sex)
+
+splot <- plot_ly(sex_summary,
+              x = ~n,
+              y = ~superhighlevel,
+              type = "bar",
+              color = ~sex,
+              orientation = "h") %>%
+  layout(barmode = "stack",
+         title = list(text = "<b>Sex versus Crime Committed<b>"),
+         yaxis = list(title = list(text = "Crime Committed"),
+                      categoryorder = "total ascending"), 
+         xaxis = list(title = list(text = "Number of Bookings")),
+         legend = list(title = list(text = "<b>Sex<b>")))
+splot
+
+```
+
+
+### Employment Status and Offense Level
+I found this one very important.  The tallest bar, by a considerable amount, is the group of inmate bookings who are considered unemployed.  In addition, these inmate bookings consisted of more felonies than misdemeanors.
+
+```{r, echo = FALSE, fig.width=12, fig.height=6}
+
+offense_df <- df2[which(df2$offense_level == "Misdemeanor" | 
+                                df2$offense_level == "Felony"),]
+
+employment_offense <- offense_df[which(offense_df$employment_status != ""), ]
+##This is the most curated of the ggplots so far
+ggplot(employment_offense %>% count(employment_status, offense_level),
+       aes(employment_status, n, fill = offense_level)) + 
+  geom_bar(position="stack", stat="identity") +
+  ggtitle("Employment Status v. Offense Level") +
+  labs(x = "Employment Status",
+       y = "Number of Bookings",
+       fill = "Offense Level") +
+  ylim(0, 30000) +
+  scale_fill_brewer(palette="Dark2")
+
+```
+
+
+### Employment and High Level Types of Crime     
+Looking at this plot we agian see a strong presence of people who were unemployed committing crimes.  
+
+1. Higher rates of unemployment exist in property, violent, drug, and public order crimes.
+2. Higher rates of those who are at least partially employed exist in traffic crimes and DUIs. 
+3. Non violent crimes are primarily what people are booked for.
+
+```{r, echo = FALSE, fig.width=8, fig.height=6}
+
+employment_df <- inmate_df[which(inmate_df$employment_status != ""), ]
+#Plotly stacked of employment v. superhighlevel
+emp_crime <- employment_df[which(employment_df$superhighlevel != ""), ]
+ec_tibble <- as_tibble(emp_crime)
+my_summary <- ec_tibble %>%
+  count(superhighlevel, employment_status)
+
+ec <- plot_ly(my_summary,
+              x = ~superhighlevel,
+              y = ~n,
+              type = "bar",
+              color = ~employment_status) %>%
+  layout(barmode = "stack",
+         title = list(text = "<b>Employment Status versus Crime Committed<b>"),
+         yaxis = list(title = list(text = "Number of Inmate Bookings")),
+         xaxis = list(title = list(text = "Crime Committed"),
+                      categoryorder = "total descending"),
+         legend = list(title = list(text = "<b>Employment Status<b>")))
+ec
+
+```
+### Marital Status and High Level Types of Crime  
+Looking at the chart below, the presence of single people dominates the proportion of the population.  
+
+```{r, echo = FALSE, fig.width=8, fig.height=6}
+
+marital_df <- inmate_df[which(inmate_df$marital_status != ""), ]
+mar_crime <- marital_df[which(marital_df$superhighlevel != ""), ]
+mc_tibble <- as_tibble(mar_crime)
+mc_summary <- mc_tibble %>%
+  count(superhighlevel, marital_status)
+
+mc <- plot_ly(mc_summary,
+              x = ~superhighlevel,
+              y = ~n,
+              type = "bar",
+              color = ~marital_status) %>%
+  layout(barmode = "stack",
+         title = list(text = "<b>Marital versus Crime Committed<b>"),
+         yaxis = list(title = list(text = "Number of Inmate Bookings")),
+         xaxis = list(title = list(text = "Crime Committed"),
+                      categoryorder = "total descending"),
+         legend = list(title = list(text = "<b>Marital Status<b>")))
+mc
+
+```
+
+### Specific Crimes Committed   
+Taking a look now at the top 20 crimes that were committed between 2012 and 2018 in the State of Illinois.  This has been manipulated to drop categories like "other" and "miscellaneous jail code".  
+Some inferences that can be made from this are:  
+1. Petty crimes are some of the most common crimes with traffic or driving related crimes predominating.  
+2. Drug and theft were also common in Illinois during the years in question.  
+3. DUIs are the 3rd most common reason for arrest.  This is easily preventable and it could be worth while to look into successful alchol intervention or mitigation programs.  
+
+
+```{r, echo=FALSE, fig.width=12, fig.height=9}
+library(RColorBrewer)
+cdf <- as.data.frame(table(df2$crime))
+wordstoremove <- c("", "OTHER CRIMINAL OFFENSES", "MISC JAIL CODE")
+cdf <- filter(cdf, !(Var1 %in% wordstoremove))
+cdf <- cdf[order(cdf$Freq, decreasing = TRUE), ]
+cdf <- cdf[1:20, ]
+
+cdf_colors <- colorRampPalette(brewer.pal(11, "RdGy"))(nrow(cdf))
+
+cdfplot <- plot_ly(cdf,
+                 x = ~Freq,
+                 y = ~Var1,
+                 type = "bar",
+                 marker = list(color = cdf_colors),
+                 orientation = "h") %>%
+  layout(barmode = "stack",
+         title = list(text = "<b>Most Common Crimes Committed<b>"),
+         yaxis = list(title = list(text = "<b>Crime Committed<b>"),
+                      categoryorder = "total ascending"), 
+         xaxis = list(title = list(text = "Number of Bookings")))
+cdfplot
+
+
+```
+
+
+## Time Series   
+
+I created a time series of the bookings per day in this data set. As described in the data cleaning section the booking date column was taken from the original data set and cast as a date time data type.  Using this singular data type I was able to feature engineer several other attributes.  In order to manipulate the data the way I wanted I also put the final data frame into a tibble.  I used the fpp2 time series to make adjustments to the data such as differencing and visualizing seasonality.  One common trend I was able to identify is that there is always a drop in prison bookings during the month of December. I used an ARIMA model to help with forecasting future trends.
+
+When first looking at a times series plot of day by day there was a lot of noise. I ended up dividing it up by monthly average and year. The first subplot shows the over all linear trend from year to year for average monthly bookings. There is a visible steady decline in the data.
+
+```{r, echo=FALSE}
+
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+#changing data type to date
+inmate_df$booking_date <- as.Date(inmate_df$booking_date, "%m/%d/%Y")
+#data frame of dates with counts
+date_table <- as.data.frame(table(inmate_df$booking_date))
+
+#saving booking date as vector
+inc_date <- as.Date(unique(inmate_df$booking_date))
+#frequencies as vector
+date_counts <- date_table$Freq
+#data frame
+#note -- when saved as vector data type of date
+#becomes factor.  Try to make more efficient?
+date_freq <- data.frame(inc_date, date_counts)
+
+#create year and month and day columns
+date_freq <- date_freq %>% mutate(month = month(inc_date))
+
+date_freq <- date_freq %>% mutate(year = year(inc_date))
+
+date_freq <- date_freq %>% mutate(days = weekdays(inc_date))
+
+
+```
+
+
+
+
+```{r, echo=FALSE, fig.width=8, fig.height=6}
+
+library(lubridate)
+library(tidyverse)
+
+library(gridExtra)
+##CREATING DATA AS TIBBLE
+tibble_data <- as_tibble(date_freq)
+tibble_data <- tibble_data[which(tibble_data$year != 2018), ]
+
+
+#For loop to break up data by year and plot by month
+tib_list <- list()
+for (i in unique(tibble_data$year)){
+  
+  bd <- tibble_data[which(tibble_data$year == i), ]
+  
+  d <- bd %>%
+    group_by(month) %>%
+    summarise(mean_booking = mean(date_counts, na.rm = TRUE))
+  
+  tib_list[[quo_name(i)]] <- ggplot(d, aes(x = month, y = mean_booking)) +
+    geom_point(color = "deeppink2") +
+    geom_line() +
+    labs(title = i, 
+         x = "Month",
+         y = "Average Daily Bookings")+
+    ylim(18, 40)+
+    scale_x_continuous(breaks = c(1:12), labels = c(month.abb))
+  
+}
+
+grid.arrange(grobs = tib_list,
+             top = "Monthly Booking Data \nYear over Year")
+
+```
+
+### Day of the Week Observations  
+This is another visualization that surprised me.  I expected the number of daily bookings to be higher on Friday and Saturday.  Monday is the lowest number of daily bookings, but not by much.  It is interesting that average daily bookings were pretty steady regardless of day of the week.
+
+```{r, echo = FALSE}
+
+weekdays <- tibble_data %>%
+  group_by(days) %>%
+  summarise(mean_days = mean(date_counts, na.rm = TRUE))
+weekdays$days <- factor(weekdays$days, 
+                             levels = c("Sunday",
+                                        "Monday",
+                                        "Tuesday",
+                                        "Wednesday",
+                                        "Thursday",
+                                        "Friday",
+                                        "Saturday"))
+weekdays <- weekdays[order(weekdays$days), ]
+
+ggplot(weekdays, aes(x = days, y = mean_days)) +
+  geom_bar(stat = "identity",
+           fill = "#B24F60") +
+  ylim(0, 35) +
+  labs(title = "Average Bookings \nBy Day of the Week",
+       x = "Weekday",
+       y = "Average Number of Bookings")
+
+
+```
+
+
+### Time Series Forecasting  
+
+As mentioned above the ARIMA model was used to forecast future booking data. ARIMA stands for Autoregressive Moving Average.  The ARIMA model is popularly used because it can take into account seasonality, differencing, autoregression, and moving average.  The auto regression is takes into account "past values of the variable".  What makes the ARIMA model sophisticated though is the moving average portion of the model.  This not only takes into account the regression, but also "uses past forecast errors in a regression-like model". (Hyndman, 2018)
+
+Unfortunately when looking at the lattermost forecating plot, the blue area indicates a wide confidence interval.  Therefore, making the model unreliable.  This makes sense, as the future of prison booking dates would be unreliable.  
+
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+
+library(fpp2)
+
+ts_tibble <- aggregate(date_counts ~ month + year , 
+                       tibble_data , 
+                       mean )
+
+TS <- ts(ts_tibble[,3], 
+         start = c(2012, 1), 
+         end = c(2017, 12),
+         frequency = 12)
+
+autoplot(TS) +
+  ggtitle("Time Series: Average Monthly Prison Bookings") +
+  ylab("Bookings per Day")
+#fitting ARIMA model
+fit_arima <- auto.arima(TS, 
+                        d = 1, 
+                        D = 1,
+                        stepwise = FALSE, #don't need to save time
+                        approximation = FALSE)#print models
+
+#Forecasting
+forecst <- forecast(fit_arima, h = 24)
+autoplot(forecst) +
+  ggtitle("Time Series Forecast of Daily Bookings") +
+  ylab("Bookings Per Day") +
+  xlab("Year")
+
+
+
+```
+
+
+## Conclusion   
+Although a proper set of hypothesis testing was not conducted for this, I feel like there is enough here to continue developing further.  I think there is strong enough initial evidence to suggest that an unstable personal life creates a higher likelihood of being booked in prison.  
+Some theories I would like to investigate further that were not available in this data are:
+
+What is the rate of people booked who have offended before?
+
+What is the post high school education of the persons being booked? (i.e. trade school, some college, ext.)
+
+What is the rate of people who commit alchol or drug related crimes that also commit other crimes.  Can this be mitigated?
+
+There is no correct answer.  This subject has deep rooted social constructs and sensitive topics surrounding it.  I do feel like with further investigation, research, and community outreach this is a problem that can continue to decline.  
+
+
+## Bibliography  
+
+Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2. Retrieved February 15, 2022
+
+Kerns, G.J. (2010). Introduction to Probability and Statistics using R. Kerns
+
+LaMorte, Wayne & Sullivan, Lisa (2016). The Role of Probability. Boston University School of Public Health, Page 12. https://sphweb.bumc.bu.edu/otlt/mph-modules/bs/bs704_probability/index.html
+
+State of Illinois. (2019). Illinois.gov open data sourcing. Retrieved February 7, 2022, from https://data.illinois.gov/dataset/jail-booking-data 
+
+
+
+
+
 
