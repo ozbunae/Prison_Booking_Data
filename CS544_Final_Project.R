@@ -18,7 +18,7 @@ options(scipen = 999)
 
 ####CHANGE THIS TO COME FROM THE WORKING DIRECTORY
 #read in CSV
-df <- read.csv("C:/Users/ozbun/Desktop/inmate_data.csv")
+df <- read.csv("inmate_data.csv")
 
 head(df)
 nrow(df)
