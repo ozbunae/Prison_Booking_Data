@@ -10,6 +10,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+knit(input="readme.rmd", output = "readme.md")
 knitr::opts_chunk$set(fig.width=8, fig.height=4,
                       echo=FALSE, warning=FALSE, message=FALSE)
 ```
