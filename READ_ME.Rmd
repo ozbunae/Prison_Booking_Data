@@ -4,6 +4,7 @@ author: "Andrew Ozbun"
 date: "February 24, 2022"
 output: 
   html_document:
+    keep_md: true
     toc: true
     toc_float: true
 ---
